@@ -2,6 +2,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 use axum::extract::ws::{WebSocket, Message};
 use tracing::{self, debug, info, warn, error};
+use super::Channel;
 
 pub enum ClientRole {
     Publisher,
@@ -16,12 +17,12 @@ pub struct Subscriber {
 }
 
 impl Subscriber {
-    pub fn new(ws: WebSocket, chan_id: Uuid, rx: broadcast::Receiver<String>) -> Self {
+    pub fn new(ws: WebSocket, chan: &Channel) -> Self {
         Subscriber { 
             id: Uuid::new_v4(), 
             ws, 
-            chan_id,
-            rx 
+            chan_id: chan.get_id(),
+            rx: chan.get_rx()
         }
     }
 
@@ -45,12 +46,12 @@ pub struct Publisher {
 }
 
 impl Publisher {
-    pub fn new(ws: WebSocket, chan_id: Uuid, tx: broadcast::Sender<String>) -> Self {
+    pub fn new(ws: WebSocket, chan: &Channel) -> Self {
         Publisher { 
             id: Uuid::new_v4(), 
             ws, 
-            chan_id, 
-            tx 
+            chan_id: chan.get_id(), 
+            tx: chan.get_tx()
         }
     }
 

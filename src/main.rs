@@ -54,12 +54,11 @@ async fn pub_handler(ws: WebSocketUpgrade, State(chan): State<Channel>) -> impl 
 async fn handle_socket(socket: WebSocket, chan: Channel, role: client::ClientRole) {
     match role {
         client::ClientRole::Publisher => {
-            // publish here
-            let mut publ: Publisher = Publisher::new(socket, chan.id, chan.tx);
+            let mut publ: Publisher = Publisher::new(socket, &chan);
             publ.attach().await;
         },
         client::ClientRole::Subscriber => {
-            let mut sub: Subscriber = Subscriber::new(socket, chan.id, chan.rx);
+            let mut sub: Subscriber = Subscriber::new(socket, &chan);
             sub.attach().await;
         }
     }
