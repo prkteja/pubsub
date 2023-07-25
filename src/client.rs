@@ -1,7 +1,10 @@
-use tokio::sync::broadcast;
+use std::sync::Arc;
+
+use futures::future::join_all;
 use uuid::Uuid;
 use axum::extract::ws::{WebSocket, Message};
 use tracing::{self, debug, info, warn, error};
+use tokio::sync::Mutex;
 use super::Channel;
 
 pub enum ClientRole {
@@ -9,76 +12,79 @@ pub enum ClientRole {
     Subscriber
 }
 
-pub struct Subscriber {
+pub struct Client {
     id: Uuid,
-    ws: WebSocket,
-    chan_id: Uuid,
-    rx: broadcast::Receiver<String>
+    ws: Arc<Mutex<WebSocket>>
 }
 
-impl Subscriber {
-    pub fn new(ws: WebSocket, chan: &Channel) -> Self {
-        Subscriber { 
+impl Client {
+    pub fn new(ws: WebSocket) -> Self {
+        Client { 
             id: Uuid::new_v4(), 
-            ws, 
-            chan_id: chan.get_id(),
-            rx: chan.get_rx()
+            ws: Arc::new(Mutex::new(ws)) 
         }
     }
 
-    // listen for messages on channel and transmit them over the WebSocket
-    pub async fn attach(&mut self) {
-        while let Ok(msg) = self.rx.recv().await {
-            debug!("Got message {} from channel {}", msg, self.chan_id);
-            if self.ws.send(Message::Text(msg)).await.is_err() {
+    pub async fn subscribe(&self, chan: &Channel) {
+        while let Ok(msg) = chan.get_rx().recv().await {
+            debug!("Got message {} from channel {}", msg, chan.get_id());
+            let mut soc = self.ws.lock().await;
+            if  soc.send(Message::Text(msg)).await.is_err() {
                 warn!("Client {} abruptly disconnected", self.id);
                 return;
             }
         }
     }
-}
 
-pub struct Publisher {
-    id: Uuid,
-    ws: WebSocket,
-    chan_id: Uuid,
-    tx: broadcast::Sender<String>
-}
+    pub async fn bulk_subscribe(&self, chan_list: Vec<&Channel>) {
+        let fut_list = chan_list.into_iter().map(|chan| self.subscribe(chan));
+        join_all(fut_list).await;
+    }
 
-impl Publisher {
-    pub fn new(ws: WebSocket, chan: &Channel) -> Self {
-        Publisher { 
-            id: Uuid::new_v4(), 
-            ws, 
-            chan_id: chan.get_id(), 
-            tx: chan.get_tx()
+    async fn enque_msg(&self, msg: Message, chan: &Channel) {
+        match msg {
+            Message::Text(t) => {
+                debug!("Received {} from client {}", t, self.id);
+                match chan.get_tx().send(t.clone()) {
+                    Ok(_) => {
+                        debug!("Pushed {} to channel {}", t, chan.get_id());
+                    },
+                    Err(e) => {
+                        error!("Message {} failed to enque on channel {}, Error: {}", t, chan.get_id(), e);      
+                    }
+                };
+            },
+            Message::Close(_) => {
+                info!("Client {} disconnected", self.id);
+                return;
+            },
+            _ => {
+                warn!("Invalid message received from client {}", self.id);
+            }
         }
     }
 
-    // listen for messages on WebSocket and enque them on the channel
-    pub async fn attach(&mut self) {
+    pub async fn publish(&self, chan: &Channel) {
+        let mut soc = self.ws.lock().await;
         loop {
-            if let Some(msg) = self.ws.recv().await {
+            if let Some(msg) = soc.recv().await {
                 if let Ok(msg) = msg {
-                    match msg {
-                        Message::Text(t) => {
-                            debug!("Received {} from client {}", t, self.id);
-                            match self.tx.send(t.clone()) {
-                                Ok(_) => {
-                                    debug!("Pushed {} to channel {}", t, self.chan_id);
-                                },
-                                Err(e) => {
-                                    error!("Message {} failed to enque on channel {}, Error: {}", t, self.chan_id, e);      
-                                }
-                            };
-                        },
-                        Message::Close(_) => {
-                            info!("Client {} disconnected", self.id);
-                            return;
-                        },
-                        _ => {
-                            warn!("Invalid message received from client {}", self.id);
-                        }
+                    self.enque_msg(msg, chan).await;
+                } else {
+                    warn!("Client {} abruptly disconnected", self.id);
+                    return;
+                }
+            }
+        }
+    }
+    
+    pub async fn bulk_publish(&self, chan_list: Vec<&Channel>) {
+        let mut soc = self.ws.lock().await;
+        loop {
+            if let Some(msg) = soc.recv().await {
+                if let Ok(msg) = msg {
+                    for chan in chan_list.iter() {
+                        self.enque_msg(msg.to_owned(), *chan).await;
                     }
                 } else {
                     warn!("Client {} abruptly disconnected", self.id);

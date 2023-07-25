@@ -13,8 +13,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod channel;
 mod client;
 use channel::Channel;
-use client::Subscriber;
-use client::Publisher;
+use client::Client;
 
 #[tokio::main]
 async fn main() {
@@ -52,14 +51,13 @@ async fn pub_handler(ws: WebSocketUpgrade, State(chan): State<Channel>) -> impl 
 }
 
 async fn handle_socket(socket: WebSocket, chan: Channel, role: client::ClientRole) {
+    let client = Client::new(socket);
     match role {
         client::ClientRole::Publisher => {
-            let mut publ: Publisher = Publisher::new(socket, &chan);
-            publ.attach().await;
+            client.publish(&chan).await;
         },
         client::ClientRole::Subscriber => {
-            let mut sub: Subscriber = Subscriber::new(socket, &chan);
-            sub.attach().await;
+            client.subscribe(&chan).await;
         }
     }
 }
