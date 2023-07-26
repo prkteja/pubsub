@@ -1,5 +1,5 @@
 use std::sync::Arc;
-
+use std::str::FromStr;
 use futures::future::join_all;
 use uuid::Uuid;
 use axum::extract::ws::{WebSocket, Message};
@@ -10,6 +10,17 @@ use super::Channel;
 pub enum ClientRole {
     Publisher,
     Subscriber
+}
+
+impl FromStr for ClientRole {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Subscriber" | "subscriber" | "sub" | "/sub" => Ok(ClientRole::Subscriber),
+            "Publisher" | "publisher" | "pub" | "/pub" => Ok(ClientRole::Publisher),
+            _ => Err(())
+        }
+    }
 }
 
 pub struct Client {

@@ -2,10 +2,10 @@ use axum::{
     extract::{State, ws::{WebSocket, WebSocketUpgrade}},
     response::IntoResponse,
     routing::get,
-    Router,
+    Router, http::Uri,
 };
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, str::FromStr};
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -27,8 +27,8 @@ async fn main() {
 
     let chan = Channel::new(32);
     let app = Router::new()
-        .route("/sub", get(sub_handler))
-        .route("/pub", get(pub_handler))
+        .route("/sub", get(client_handler))
+        .route("/pub", get(client_handler))
         .with_state(chan)
         .layer(
             TraceLayer::new_for_http()
@@ -43,11 +43,8 @@ async fn main() {
         .unwrap();
 }
 
-async fn sub_handler(ws: WebSocketUpgrade, State(chan): State<Channel>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, chan, client::ClientRole::Subscriber))
-}
-async fn pub_handler(ws: WebSocketUpgrade, State(chan): State<Channel>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, chan, client::ClientRole::Publisher))
+async fn client_handler(ws: WebSocketUpgrade, uri: Uri, State(chan): State<Channel>) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, chan, client::ClientRole::from_str(uri.to_string().as_str()).unwrap()))
 }
 
 async fn handle_socket(socket: WebSocket, chan: Channel, role: client::ClientRole) {
