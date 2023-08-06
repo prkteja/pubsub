@@ -13,12 +13,12 @@ pub enum ClientRole {
 }
 
 impl FromStr for ClientRole {
-    type Err = ();
+    type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "Subscriber" | "subscriber" | "sub" | "/sub" => Ok(ClientRole::Subscriber),
-            "Publisher" | "publisher" | "pub" | "/pub" => Ok(ClientRole::Publisher),
-            _ => Err(())
+            "Subscriber" | "subscriber" => Ok(ClientRole::Subscriber),
+            "Publisher" | "publisher" => Ok(ClientRole::Publisher),
+            _ => Err(format!("Invalid ClientRole {}", s))
         }
     }
 }
@@ -28,6 +28,7 @@ pub struct Client {
     ws: Arc<Mutex<WebSocket>>
 }
 
+#[allow(dead_code)]
 impl Client {
     pub fn new(ws: WebSocket) -> Self {
         Client { 
@@ -37,8 +38,9 @@ impl Client {
     }
 
     pub async fn subscribe(&self, chan: &Channel) {
+        debug!("client {} subscribed to channel {}", self.id, chan.get_id());
         while let Ok(msg) = chan.get_rx().recv().await {
-            debug!("Got message {} from channel {}", msg, chan.get_id());
+            debug!("Got message {} from channel {}", msg, chan.get_name());
             let mut soc = self.ws.lock().await;
             if  soc.send(Message::Text(msg)).await.is_err() {
                 warn!("Client {} abruptly disconnected", self.id);
@@ -58,10 +60,10 @@ impl Client {
                 debug!("Received {} from client {}", t, self.id);
                 match chan.get_tx().send(t.clone()) {
                     Ok(_) => {
-                        debug!("Pushed {} to channel {}", t, chan.get_id());
+                        debug!("Pushed {} to channel {}", t, chan.get_name());
                     },
                     Err(e) => {
-                        error!("Message {} failed to enque on channel {}, Error: {}", t, chan.get_id(), e);      
+                        error!("Message {} failed to enque on channel {}, Error: {}", t, chan.get_name(), e);      
                     }
                 };
             },

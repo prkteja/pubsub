@@ -2,26 +2,33 @@ use uuid::Uuid;
 use tokio::sync::broadcast;
 
 #[allow(dead_code)]
-#[derive(Clone)]
 pub struct Channel {
     id: Uuid,
+    name: String,
     size: usize,
     tx: broadcast::Sender<String>,
+    rx: broadcast::Receiver<String>
 }
 
 #[allow(dead_code)]
 impl Channel {
-    pub fn new(size: usize) -> Self {
-        let (tx, _) = broadcast::channel(size);
+    pub fn new(name: String, size: usize) -> Self {
+        let (tx, rx) = broadcast::channel(size);
         Channel {
             id: Uuid::new_v4(),
+            name,
             size,
-            tx
+            tx,
+            rx
         }
     }
 
     pub fn get_id(&self) -> Uuid {
         self.id
+    }
+
+    pub fn get_name(&self) -> String {
+        self.name.clone()
     }
 
     pub fn get_size(&self) -> usize {
